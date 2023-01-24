@@ -8,7 +8,7 @@
 
 namespace my_lib {
 
-// 定数
+
 constexpr double kDt   = 1.0e-3;  // Differential interval
 constexpr int    kStep = 100000;  // Time step count
 constexpr double kX0   = 1.0;     // Initial value of x
