@@ -17,8 +17,10 @@ private:
     SOCKET tuneFTP_socket;
 
     void handleConnection(SOCKET client_socket);
-    void processCommand(SOCKET client_socket, const std::string& command);  // Ensure this matches the implementation
+    void processCommand(SOCKET client_socket, const std::string& command);
     void switchDirectory(SOCKET client_socket, const std::string& path);
+
+    void logConnection(SOCKET client_socket, bool isConnected);
 };
 
 #endif // TFTP_SERVER_H

@@ -2,11 +2,13 @@
 #include "TFTPUploadHandler.h"
 #include "TFTPDownloadHandler.h"
 #include <winsock2.h> // Windows sockets
-#include <ws2tcpip.h> // For more socket functions (getaddrinfo)
+#include <ws2tcpip.h> // For more socket functions (getpeername, inet_ntop)
 #include <direct.h>
 #include <windows.h>
 #include <iostream>
 #include <fstream>
+#include <chrono>
+#include <ctime>
 
 #pragma comment(lib, "Ws2_32.lib") // Link Winsock library
 
@@ -51,6 +53,7 @@ void TFTPServer::start() {
     while (true) {
         SOCKET client_socket = accept(tuneFTP_socket, nullptr, nullptr);
         if (client_socket != INVALID_SOCKET) {
+            logConnection(client_socket, true);  // Log connection
             handleConnection(client_socket);
         }
     }
@@ -64,14 +67,30 @@ void TFTPServer::stop() {
 }
 
 void TFTPServer::handleConnection(SOCKET client_socket) {
+    // Send welcome message to the client
+    std::string welcomeMsg = "You are connected to TuneFTP!\n";
+    send(client_socket, welcomeMsg.c_str(), welcomeMsg.size(), 0);
+
+    // Send a prompt message to simulate an FTP command prompt
+    std::string prompt = "ftp> ";
+    send(client_socket, prompt.c_str(), prompt.size(), 0);
+
     char buffer[1024];
-    int bytes_read = recv(client_socket, buffer, sizeof(buffer), 0);  // Winsock recv
-    if (bytes_read > 0) {
-        buffer[bytes_read] = '\0';
-        std::string command(buffer);
-        this->processCommand(client_socket, command);  // Call with 'this'
+    while (true) {
+        int bytes_read = recv(client_socket, buffer, sizeof(buffer) - 1, 0);  // Winsock recv
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';
+            std::string command(buffer);
+            this->processCommand(client_socket, command);  // Process command
+            send(client_socket, prompt.c_str(), prompt.size(), 0);  // Show prompt after each command
+        }
+        else {
+            break;  // Exit the loop if the connection is closed or recv fails
+        }
     }
+
     closesocket(client_socket);  // Winsock closesocket
+    logConnection(client_socket, false);  // Log disconnection
 }
 
 void TFTPServer::processCommand(SOCKET client_socket, const std::string& command) {
@@ -99,5 +118,30 @@ void TFTPServer::switchDirectory(SOCKET client_socket, const std::string& path) 
     else {
         std::string response = "Failed to change directory\n";
         send(client_socket, response.c_str(), response.size(), 0);
+    }
+}
+
+// Helper function to log connection and disconnection events
+void TFTPServer::logConnection(SOCKET client_socket, bool isConnected) {
+    sockaddr_in client_info;
+    int addr_size = sizeof(client_info);
+    char client_ip[INET_ADDRSTRLEN];  // Buffer for the client IP address
+
+    if (getpeername(client_socket, (sockaddr*)&client_info, &addr_size) == 0) {
+        inet_ntop(AF_INET, &client_info.sin_addr, client_ip, sizeof(client_ip));
+    }
+    else {
+        strcpy(client_ip, "Unknown IP");
+    }
+
+    // Get the current time
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+
+    if (isConnected) {
+        std::cout << "[" << std::ctime(&now_c) << "] Client connected: " << client_ip << "\n";
+    }
+    else {
+        std::cout << "[" << std::ctime(&now_c) << "] Client disconnected: " << client_ip << "\n";
     }
 }
