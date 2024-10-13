@@ -2,7 +2,7 @@
 #define TFTP_SERVER_H
 
 #include <string>
-#include <map>
+#include <winsock2.h>
 
 class TFTPServer {
 public:
@@ -14,12 +14,11 @@ public:
 
 private:
     int tuneFTP_port;
-    int tuneFTP_socket;
-    std::map<int, std::string> tuneFTP_sessions;
+    SOCKET tuneFTP_socket;
 
-    void handleConnection(int client_socket);
-    void processCommand(int client_socket, const std::string& command);
-    void switchDirectory(int client_socket, const std::string& path);
+    void handleConnection(SOCKET client_socket);
+    void processCommand(SOCKET client_socket, const std::string& command);  // Ensure this matches the implementation
+    void switchDirectory(SOCKET client_socket, const std::string& path);
 };
 
 #endif // TFTP_SERVER_H
