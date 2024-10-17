@@ -6,7 +6,7 @@
 
 class TFTPDownloadHandler {
 public:
-    static void handleDownload(SOCKET client_socket, const std::string& filePath);  // Use SOCKET here
+    static void handleDownload(SOCKET data_socket, SOCKET client_socket, const std::string& filePath, const std::string& mode);
 };
 
 #endif // TFTP_DOWNLOAD_HANDLER_H

@@ -6,7 +6,7 @@
 
 class TFTPUploadHandler {
 public:
-    static void handleUpload(SOCKET client_socket, const std::string& filePath);  // Use SOCKET instead of int
+    static void handleUpload(SOCKET data_socket, SOCKET client_socket, const std::string& filePath, const std::string& mode);
 };
 
 #endif // TFTP_UPLOAD_HANDLER_H
