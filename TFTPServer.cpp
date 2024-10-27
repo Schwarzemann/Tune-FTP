@@ -20,10 +20,11 @@ void TFTPServer::configureServer() {
     std::cout << "=== Configure TuneFTP Server ===" << std::endl;
     std::cout << "Enter admin username: ";
     std::getline(std::cin, adminUsername);
-
+    adminUsername.erase(adminUsername.find_last_not_of(" \n\r\t") + 1);
     std::cout << "Enter admin password: ";
     std::getline(std::cin, adminPassword);
-
+    adminPassword.erase(adminPassword.find_last_not_of(" \n\r\t") + 1);
+    std::cout << "Credentials set. Username: " << adminUsername << ", Password: " << adminPassword << std::endl;
     std::cout << "Enter directory path for client access: ";
     std::getline(std::cin, accessDirectory);
 
@@ -81,10 +82,122 @@ void TFTPServer::stop() {
     }
 }
 
+bool TFTPServer::authenticateClient(SOCKET client_socket) {
+    char buffer[1024];
+    std::string username, password;
+
+    // Request username
+    std::string requestUsername = "Enter username: ";
+    send(client_socket, requestUsername.c_str(), requestUsername.size(), 0);
+    int bytes_read = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+    if (bytes_read > 0) {
+        buffer[bytes_read] = '\0';  // Null-terminate the buffer
+        username = std::string(buffer);
+        // Trim trailing whitespace and newline characters
+        username.erase(username.find_last_not_of(" \n\r\t") + 1);
+    }
+
+    // Request password
+    std::string requestPassword = "Enter password: ";
+    send(client_socket, requestPassword.c_str(), requestPassword.size(), 0);
+    bytes_read = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+    if (bytes_read > 0) {
+        buffer[bytes_read] = '\0';
+        password = std::string(buffer);
+        // Trim trailing whitespace and newline characters
+        password.erase(password.find_last_not_of(" \n\r\t") + 1);
+    }
+
+    // Debugging Output (Optional): Print stored and entered credentials
+    std::cout << "Stored Username: [" << adminUsername << "], Entered Username: [" << username << "]\n";
+    std::cout << "Stored Password: [" << adminPassword << "], Entered Password: [" << password << "]\n";
+
+    // Validate credentials
+    if (username == adminUsername && password == adminPassword) {
+        std::string successMsg = "230 User logged in, proceed.\n";
+        send(client_socket, successMsg.c_str(), successMsg.size(), 0);
+        return true;
+    }
+    else {
+        std::string errorMsg = "530 Incorrect login.\n";
+        send(client_socket, errorMsg.c_str(), errorMsg.size(), 0);
+        return false;
+    }
+}
+
 void TFTPServer::handleClient(SOCKET client_socket) {
-    sendResponse(client_socket, "220 Welcome to TuneFTP!\r\n");
+    // Send the initial welcome message (220) to the client
+    std::string welcomeMsg = "220 Welcome to TuneFTP!\r\n";
+    int sentBytes = send(client_socket, welcomeMsg.c_str(), welcomeMsg.size(), 0);
+
+    if (sentBytes == SOCKET_ERROR) {
+        std::cerr << "Failed to send welcome message (220) to client.\n";
+        closesocket(client_socket);
+        return;
+    }
+    std::cout << "Sent welcome message to client: " << welcomeMsg;
+
+    char buffer[1024];
+    std::string username;
+    bool isAuthenticated = false;
+
+    // Handle USER and PASS commands for login
+    while (!isAuthenticated) {
+        int bytes_read = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+
+        if (bytes_read == SOCKET_ERROR) {
+            std::cerr << "Failed to receive data from client.\n";
+            closesocket(client_socket);
+            return;
+        }
+        else if (bytes_read == 0) {
+            // Client closed the connection
+            closesocket(client_socket);
+            return;
+        }
+
+        buffer[bytes_read] = '\0';
+        std::string command(buffer);
+        std::cout << "Received command from client: " << command;
+
+        if (command.find("USER") == 0) {
+            // Extract the username and respond with 331 to prompt for password
+            username = command.substr(5);  // Assume "USER username"
+            std::string userResponse = "331 Username OK, need password.\r\n";
+            send(client_socket, userResponse.c_str(), userResponse.size(), 0);
+            std::cout << "Sent response to USER command: " << userResponse;
+        }
+        else if (command.find("PASS") == 0) {
+            // Extract the password and validate
+            std::string password = command.substr(5);  // Assume "PASS password"
+            if (username == adminUsername && password == adminPassword) {
+                std::string passResponse = "230 User logged in, proceed.\r\n";
+                send(client_socket, passResponse.c_str(), passResponse.size(), 0);
+                std::cout << "Sent login success response: " << passResponse;
+                isAuthenticated = true;  // Authentication successful
+            }
+            else {
+                std::string failResponse = "530 Login incorrect.\r\n";
+                send(client_socket, failResponse.c_str(), failResponse.size(), 0);
+                std::cerr << "Failed login attempt.\n";
+                closesocket(client_socket);  // Close connection on failed login
+                return;
+            }
+        }
+        else {
+            // If not yet authenticated, enforce login with USER and PASS
+            std::string loginPrompt = "530 Please login with USER and PASS.\r\n";
+            send(client_socket, loginPrompt.c_str(), loginPrompt.size(), 0);
+            std::cout << "Sent login prompt to client: " << loginPrompt;
+        }
+    }
+
+    // If authenticated, proceed to handle FTP commands
     handleCommands(client_socket);
-    closesocket(client_socket);  // Close control connection after the session ends
+
+    // Close the client socket after the session ends
+    closesocket(client_socket);
+    logConnection(client_socket, false);  // Log disconnection
 }
 
 void TFTPServer::handleCommands(SOCKET client_socket) {
@@ -101,7 +214,7 @@ void TFTPServer::handleCommands(SOCKET client_socket) {
 
         if (command.find("USER") == 0) {
             username = command.substr(5);
-            sendResponse(client_socket, "331 Username OK, need password.\r\n");
+            sendResponse(client_socket, "331 Username OK, need password.\r\n");  // Respond with 331 to prompt for password
         }
         else if (command.find("PASS") == 0) {
             std::string password = command.substr(5);
@@ -114,14 +227,18 @@ void TFTPServer::handleCommands(SOCKET client_socket) {
                 return;  // Disconnect on failed login
             }
         }
+        else if (!loggedIn) {
+            // If not logged in, reject commands other than USER and PASS
+            sendResponse(client_socket, "530 Please login with USER and PASS.\r\n");
+        }
         else if (command.find("LIST") == 0) {
-            if (loggedIn) handleLIST(client_socket);
+            handleLIST(client_socket);
         }
         else if (command.find("RETR") == 0) {
-            if (loggedIn) handleRETR(client_socket, command.substr(5));
+            handleRETR(client_socket, command.substr(5));
         }
         else if (command.find("STOR") == 0) {
-            if (loggedIn) handleSTOR(client_socket, command.substr(5));
+            handleSTOR(client_socket, command.substr(5));
         }
         else if (command.find("QUIT") == 0) {
             handleQUIT(client_socket);

@@ -31,6 +31,7 @@ private:
     void handleRETR(SOCKET client_socket, const std::string& filename);
     void handleSTOR(SOCKET client_socket, const std::string& filename);
     void handleQUIT(SOCKET client_socket);
+    bool authenticateClient(SOCKET client_socket);
 
     void sendResponse(SOCKET client_socket, const std::string& response);
     void openDataChannel(SOCKET client_socket);
